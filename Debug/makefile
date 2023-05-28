@@ -52,6 +52,9 @@ default.size.stdout \
 OBJDUMP_LIST += \
 pzem_dht11_stm32f03c8t6.list \
 
+OBJCOPY_HEX += \
+pzem_dht11_stm32f03c8t6.hex \
+
 
 # All Target
 all: main-build
@@ -75,12 +78,17 @@ pzem_dht11_stm32f03c8t6.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TO
 	@echo 'Finished building: $@'
 	@echo ' '
 
+pzem_dht11_stm32f03c8t6.hex: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objcopy  -O ihex $(EXECUTABLES) "pzem_dht11_stm32f03c8t6.hex"
+	@echo 'Finished building: $@'
+	@echo ' '
+
 # Other Targets
 clean:
-	-$(RM) default.size.stdout pzem_dht11_stm32f03c8t6.elf pzem_dht11_stm32f03c8t6.list pzem_dht11_stm32f03c8t6.map
+	-$(RM) default.size.stdout pzem_dht11_stm32f03c8t6.elf pzem_dht11_stm32f03c8t6.hex pzem_dht11_stm32f03c8t6.list pzem_dht11_stm32f03c8t6.map
 	-@echo ' '
 
-secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)
+secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST) $(OBJCOPY_HEX)
 
 fail-specified-linker-script-missing:
 	@echo 'Error: Cannot find the specified linker script. Check the linker settings in the build configuration.'

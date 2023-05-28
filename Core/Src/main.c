@@ -24,6 +24,7 @@
 #include "pzem004t.h"
 #include "DHT.h"
 #include "Lora.h"
+#include "i2c-lcd.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,6 +46,8 @@ _values printval;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart1;
@@ -60,9 +63,8 @@ float energy = 0.0;
 float freq = 0.0;
 float pf = 0.0;
 char value_array[100] = {0};
+char i2c_array[100] = {0};
 uint8_t start_Lora = 0;
-
-//float voltage = 0.0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,6 +73,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 /*void SPI_Voltage_Transmit(LoRa* _LoRa, pzem *pzem);
 void SPI_Current_Transmit(LoRa* _LoRa, pzem *pzem);
@@ -79,6 +82,8 @@ void SPI_Energy_Transmit(LoRa* _LoRa, pzem *pzem);
 void SPI_Frequency_Transmit(LoRa* _LoRa, pzem *pzem);
 void SPI_pF_Transmit(LoRa* _LoRa, pzem *pzem);*/
 void spi_Transmit(void);
+void i2c_LCD_1(void);
+void i2c_LCD_2(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -97,10 +102,75 @@ void spi_Transmit(void)
 	freq = PZEM.values.frequency;
 	pf = PZEM.values.pf;
 
-	sprintf(value_array, "%.1f,%.1f,%.1f,%.3f,%.1f,%.3f,%.1f,%.2f,\r\n", temp_value, rh_value, volt, curr, power, energy, freq, pf);
-	LoRa_transmit(&myLoRa, (uint8_t*)value_array, strlen(value_array), 3000);
+	sprintf(value_array, "1,%.1f,%.1f,%.1f,%.3f,%.1f,%.3f,%.1f,%.2f,\r\n", temp_value, rh_value, volt, curr, power, energy, freq, pf);
+//	sprintf(value_array, "2,%.1f,%.1f,%.1f,%.3f,%.1f,%.3f,%.1f,%.2f,\r\n", temp_value, rh_value, volt, curr, power, energy, freq, pf);
+	LoRa_transmit(&myLoRa, (uint8_t*)value_array, strlen(value_array), 3000); //Default: 3000
 
 	//HAL_UART_Transmit(&huart2, (uint8_t *)value_array, strlen(value_array), 1000);
+}
+
+void i2c_LCD_1(void)
+{
+	updateValues(&PZEM);
+	volt = PZEM.values.voltage;
+	curr = PZEM.values.current;
+	power = PZEM.values.power;
+	energy = PZEM.values.energy;
+	freq = PZEM.values.frequency;
+	pf = PZEM.values.pf;
+
+	lcd_clear_display();
+	HAL_Delay(50);
+
+	sprintf(i2c_array, "%.1fV", volt);
+	lcd_goto_XY(1, 0);
+	lcd_send_string(i2c_array);
+
+	sprintf(i2c_array, "%.3fA", curr);
+	lcd_goto_XY(1, 7);
+	lcd_send_string(i2c_array);
+
+	sprintf(i2c_array, "%.1fW", power);
+	lcd_goto_XY(2, 0);
+	lcd_send_string(i2c_array);
+
+	sprintf(i2c_array, "%.3fWh", energy);
+	lcd_goto_XY(2, 7);
+	lcd_send_string(i2c_array);
+
+	HAL_Delay(2000);
+}
+
+void i2c_LCD_2(void)
+{
+	lcd_clear_display();
+	HAL_Delay(50);
+
+	DHT_GetData(&DHT11_Data);
+	temp_value = DHT11_Data.Temperature;
+	rh_value = DHT11_Data.Humidity;
+
+	updateValues(&PZEM);
+	freq = PZEM.values.frequency;
+	pf = PZEM.values.pf;
+
+	sprintf(i2c_array, "%.1fHz", freq);
+	lcd_goto_XY(1, 0);
+	lcd_send_string(i2c_array);
+
+	sprintf(i2c_array, "%.2f", pf);
+	lcd_goto_XY(1, 8);
+	lcd_send_string(i2c_array);
+
+	sprintf(i2c_array, "%.1fC", temp_value);
+	lcd_goto_XY(2, 0);
+	lcd_send_string(i2c_array);
+
+	sprintf(i2c_array, "%.1f%%", rh_value);
+	lcd_goto_XY(2, 8);
+	lcd_send_string(i2c_array);
+
+	HAL_Delay(2000);
 }
 
 /* USER CODE END 0 */
@@ -136,12 +206,12 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   MX_SPI1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
 	//PZEM CONFIG
 	init_pzem(&PZEM, &huart1, 0x01);
 	HAL_UART_Receive_IT(PZEM.huart, &PZEM.byteRx[0], 1);
-
 
 	//LORA CONFIG
 	myLoRa = newLoRa();
@@ -159,13 +229,20 @@ int main(void)
 	myLoRa.crcRate = CR_4_5;          // default = CR_4_5
 	myLoRa.power = POWER_20db;      // default = 20db
 	myLoRa.overCurrentProtection = 130;             // default = 100 mA
-	myLoRa.preamble = 10;              // default = 8;
+	myLoRa.preamble = 10;              // default = 8
 
 	LoRa_reset(&myLoRa);
 	if (LoRa_init(&myLoRa) == LORA_OK)
 	{
 		start_Lora = 1;
 	}
+
+	//LCD CONFIG
+	lcd_init();
+	lcd_goto_XY(1, 1);
+	lcd_send_string("INTIALIZING...");
+	HAL_Delay(1000);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -175,8 +252,18 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+//	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, 1);
+//	  HAL_Delay(2000);
+//	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, 0);
+//	  HAL_Delay(2000);
+
 	  if(updateValues(&PZEM))
 	  {
+		  i2c_LCD_2();
+		  HAL_Delay(1000);
+		  i2c_LCD_1();
+		  HAL_Delay(1000);
 //		  voltage = getVol(&PZEM);
 //		  sprintf(voltageArray, "%1.f", voltage);
 //		  HAL_UART_Transmit(&huart1, (uint8_t *)voltageArray, 5, 1000);
@@ -192,6 +279,7 @@ int main(void)
 			  spi_Transmit();
 			  //HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 			  HAL_Delay(60000);
+//			  HAL_Delay(65000);
 		  }
 		  //HAL_UART_Transmit(&huart6, (uint8_t *)"\n\nThe measurement result\n\r\n", 25, HAL_MAX_DELAY);
 		  /*
@@ -202,9 +290,12 @@ int main(void)
 		  printFrequency(&huart2, &PZEM);
 		  printpF(&huart2, &PZEM);
 		  */
-	  }
+		  //HAL_SuspendTick();
 
-	  //HAL_Delay(2000);
+		  //HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+
+		  //HAL_ResumeTick();
+	  }
   }
   /* USER CODE END 3 */
 }
@@ -246,6 +337,40 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
@@ -367,7 +492,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, NSS_Pin|RST_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, NSS_Pin|RST_Pin|Relay_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin : PA0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
@@ -375,8 +500,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : NSS_Pin RST_Pin */
-  GPIO_InitStruct.Pin = NSS_Pin|RST_Pin;
+  /*Configure GPIO pins : NSS_Pin RST_Pin Relay_Pin */
+  GPIO_InitStruct.Pin = NSS_Pin|RST_Pin|Relay_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -391,6 +516,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if(PZEM.rxbufferIndex >30)
@@ -405,6 +531,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		PZEM.rxbufferIndex++;
 	}
 }
+
 /* USER CODE END 4 */
 
 /**

@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define RST_GPIO_Port GPIOB
 #define DIO0_Pin GPIO_PIN_10
 #define DIO0_GPIO_Port GPIOB
+#define Relay_Pin GPIO_PIN_8
+#define Relay_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
